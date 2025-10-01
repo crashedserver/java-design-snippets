@@ -7,13 +7,16 @@ import java.util.HashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class SimpleLRUCache {
-
+    
     private final int capacity;
     private final Map<String, String> cache;
     private final Deque<String> lruQueue;
     private final ReentrantLock lock;
 
     public SimpleLRUCache(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("Capacity must be positive");
+        }
         this.capacity = capacity;
         this.cache = new HashMap<>();
         this.lruQueue = new LinkedList<>();

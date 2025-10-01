@@ -1,10 +1,10 @@
 # LRU Cache Implementations
 
-This directory contains two thread-safe implementations of a Least Recently Used (LRU) Cache, each demonstrating a different trade-off between simplicity and performance.
+This directory contains the thread-safe implementations of a Least Recently Used (LRU) Cache, demonstrating a clear progression from a simple concept to a fully-featured, high-performance component.
 
 An LRU Cache is a fixed-size cache that automatically evicts the least recently used item when it becomes full and a new item needs to be added.
 
-All public methods in both implementations are protected by a `ReentrantLock` to ensure thread safety.
+All public methods in all the implementations are protected by a `ReentrantLock` to ensure thread safety.
 
 ---
 
@@ -54,4 +54,23 @@ From the root `java-design-snippets` directory, you can compile and run its test
 ```bash
 javac data_structures/cache/LRUCache.java data_structures/cache/LRUCacheTest.java
 java data_structures.cache.LRUCacheTest
+```
+
+---
+
+## 3. `GenericLRUCache.java` (Optimized & Generic, O(1) operations) 
+
+This is the most advanced version, building on the optimized LRUCache by adding Java generics for full type safety and reusability. 
+
+### How it Works
+
+It uses the same high-performance HashMap + custom Doubly Linked List approach as LRUCache.java, but with type parameters <K, V>. This allows the cache to work with any key-value types (e.g., <Integer, String>, <UUID, UserObject>) while providing compile-time safety. 
+
+### How to Run the Test
+
+From the root `java-design-snippets` directory, you can compile and run its test: 
+
+```bash 
+javac data_structures/cache/GenericLRUCache.java data_structures/cache/GenericLRUCacheTest.java 
+java data_structures.cache.GenericLRUCacheTest
 ```

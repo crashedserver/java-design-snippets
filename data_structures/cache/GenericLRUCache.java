@@ -4,34 +4,34 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class LRUCache {
+public class GenericLRUCache<K,V> {
 
     private final int capacity;
-    private final ListNode dummyHead;
-    private final ListNode dummyTail;
-    private final Map<String, ListNode> nodeMap;
+    private final ListNode<K,V> dummyHead;
+    private final ListNode<K, V> dummyTail;
+    private final Map<K, ListNode<K, V>> nodeMap;
     private final ReentrantLock lock;
 
-    public LRUCache(int capacity) {
+    public GenericLRUCache(int capacity) {
         if (capacity <= 0) {
             throw new IllegalArgumentException("Capacity must be positive");
         }
         this.capacity = capacity;
         this.nodeMap = new HashMap<>(capacity);
-        this.dummyHead = new ListNode(null, null);
-        this.dummyTail = new ListNode(null, null);
+        this.dummyHead = new ListNode<>(null, null);
+        this.dummyTail = new ListNode<>(null, null);
         // Link dummy nodes to represent an empty list
         this.dummyHead.next = this.dummyTail;
         this.dummyTail.prev = this.dummyHead;
         this.lock = new ReentrantLock();
     }
 
-    public void put(String key, String value) {
+    public void put(K key, V value) {
         lock.lock();
         try {
             // If the key already exists, update its value and move it to the front.
             if (nodeMap.containsKey(key)) {
-                ListNode existingNode = nodeMap.get(key);
+                ListNode<K, V> existingNode = nodeMap.get(key);
                 existingNode.value = value;
                 moveToFront(existingNode);
                 return;
@@ -43,7 +43,7 @@ public class LRUCache {
             }
 
             // Add the new item to the front of the list and to the map.
-            ListNode newNode = new ListNode(key, value);
+            ListNode<K, V> newNode = new ListNode<>(key, value);
             addFirst(newNode);
             nodeMap.put(key, newNode);
         } finally {
@@ -51,7 +51,7 @@ public class LRUCache {
         }
     }
 
-    public String get(String key) {
+    public V get(K key) {
         lock.lock();
         try {
             if (!nodeMap.containsKey(key)) {
@@ -59,7 +59,7 @@ public class LRUCache {
             }
 
             // Get the node, move it to the front, and return its value.
-            ListNode node = nodeMap.get(key);
+            ListNode<K, V> node = nodeMap.get(key);
             moveToFront(node);
             return node.value;
         } finally {
@@ -69,29 +69,29 @@ public class LRUCache {
 
     // --- Doubly Linked List Helper Methods (all O(1) operations) ---
 
-    private void moveToFront(ListNode node) {
+    private void moveToFront(ListNode<K, V> node) {
         removeNode(node);
         addFirst(node);
     }
 
-    private void addFirst(ListNode node) {
-        ListNode oldFirst = dummyHead.next;
+    private void addFirst(ListNode<K, V> node) {
+        ListNode<K, V> oldFirst = dummyHead.next;
         dummyHead.next = node;
         node.prev = dummyHead;
         node.next = oldFirst;
         oldFirst.prev = node;
     }
 
-    private void removeNode(ListNode node) {
-        ListNode prevNode = node.prev;
-        ListNode nextNode = node.next;
+    private void removeNode(ListNode<K, V> node) {
+        ListNode<K, V> prevNode = node.prev;
+        ListNode<K, V> nextNode = node.next;
         prevNode.next = nextNode;
         nextNode.prev = prevNode;
     }
 
     private void removeLast() {
         // The last actual node is the one before the dummy tail.
-        ListNode lastNode = dummyTail.prev;
+        ListNode<K, V> lastNode = dummyTail.prev;
         if (lastNode == dummyHead) {
             return; // List is empty
         }
@@ -101,13 +101,13 @@ public class LRUCache {
 
     // --- Inner Class for the Doubly Linked List Node ---
 
-    private static class ListNode {
-        ListNode prev;
-        String key;
-        String value;
-        ListNode next;
+    private static class ListNode<K,V> {
+        ListNode<K,V> prev;
+        K key;
+        V value;
+        ListNode<K, V> next;
 
-        public ListNode(String key, String value) {
+        public ListNode(K key, V value) {
             this.key = key;
             this.value = value;
         }
