@@ -1,0 +1,112 @@
+package data_structures.cache;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class LRUCache {
+
+    private final int capacity;
+    private final ListNode dummyHead;
+    private final ListNode dummyTail;
+    private final Map<String, ListNode> nodeMap;
+    private final ReentrantLock lock;
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.nodeMap = new HashMap<>(capacity);
+        this.dummyHead = new ListNode(null, null);
+        this.dummyTail = new ListNode(null, null);
+        // Link dummy nodes to represent an empty list
+        this.dummyHead.next = this.dummyTail;
+        this.dummyTail.prev = this.dummyHead;
+        this.lock = new ReentrantLock();
+    }
+
+    public void put(String key, String value) {
+        lock.lock();
+        try {
+            // If the key already exists, update its value and move it to the front.
+            if (nodeMap.containsKey(key)) {
+                ListNode existingNode = nodeMap.get(key);
+                existingNode.value = value;
+                moveToFront(existingNode);
+                return;
+            }
+
+            // If the cache is full, evict the least recently used item.
+            if (nodeMap.size() >= capacity) {
+                removeLast();
+            }
+
+            // Add the new item to the front of the list and to the map.
+            ListNode newNode = new ListNode(key, value);
+            addFirst(newNode);
+            nodeMap.put(key, newNode);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public String get(String key) {
+        lock.lock();
+        try {
+            if (!nodeMap.containsKey(key)) {
+                return null;
+            }
+
+            // Get the node, move it to the front, and return its value.
+            ListNode node = nodeMap.get(key);
+            moveToFront(node);
+            return node.value;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    // --- Doubly Linked List Helper Methods (all O(1) operations) ---
+
+    private void moveToFront(ListNode node) {
+        removeNode(node);
+        addFirst(node);
+    }
+
+    private void addFirst(ListNode node) {
+        ListNode oldFirst = dummyHead.next;
+        dummyHead.next = node;
+        node.prev = dummyHead;
+        node.next = oldFirst;
+        oldFirst.prev = node;
+    }
+
+    private void removeNode(ListNode node) {
+        ListNode prevNode = node.prev;
+        ListNode nextNode = node.next;
+        prevNode.next = nextNode;
+        nextNode.prev = prevNode;
+    }
+
+    private void removeLast() {
+        // The last actual node is the one before the dummy tail.
+        ListNode lastNode = dummyTail.prev;
+        if (lastNode == dummyHead) {
+            return; // List is empty
+        }
+        removeNode(lastNode);
+        nodeMap.remove(lastNode.key);
+    }
+
+    // --- Inner Class for the Doubly Linked List Node ---
+
+    private static class ListNode {
+        ListNode prev;
+        String key;
+        String value;
+        ListNode next;
+
+        public ListNode(String key, String value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+}
