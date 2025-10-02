@@ -74,3 +74,23 @@ From the root `java-design-snippets` directory, you can compile and run its test
 javac data_structures/cache/GenericLRUCache.java data_structures/cache/GenericLRUCacheTest.java 
 java data_structures.cache.GenericLRUCacheTest
 ```
+
+---
+
+## 4. `SimpleTTLCache.java` (Time-To-Live Eviction)
+
+This is a cache implementation where each entry automatically expires and is evicted after a configured Time-To-Live (TTL) duration.
+
+### How it Works
+
+It uses a `ConcurrentHashMap` for thread-safe storage and a `ScheduledExecutorService` to run a background task periodically. This task scans the cache and removes any entries that have lived longer than their TTL.
+
+### How to Run the Test
+
+From the root `java-design-snippets` directory, you can compile and run its test to see items being evicted after their TTL expires:
+
+```bash
+javac data_structures/cache/SimpleTTLCache.java data_structures/cache/SimpleTTLCacheTest.java
+java data_structures.cache.SimpleTTLCacheTest
+```
+```
