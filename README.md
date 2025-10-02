@@ -9,7 +9,7 @@ Welcome! This repository is a collection of concise and practical Java implement
 - Classical algorithms (sorting, searching, graphs) - (COMING UP)
 - Concurrency (threading, producer-consumer) - (COMING UP)
 - Design patterns (singleton, factory, observer) - (COMING UP)
-- System design components (rate limiter, circuit breaker) - (COMING UP)
+- System design components (rate limiter, circuit breaker)
 
 ## How to Use
 - Browse folders by topic
