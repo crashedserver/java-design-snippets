@@ -16,8 +16,8 @@ A circuit breaker is a stability pattern that prevents a client from repeatedly 
 From the root `java-design-snippets` directory, you can compile and run the test to see the state transitions in action:
 
 ```bash
-javac system_design/SimpleCircuitBreaker.java system_design/SimpleCircuitBreakerTest.java
-java system_design.SimpleCircuitBreakerTest
+javac system_design/resiliency/SimpleCircuitBreaker.java system_design/resiliency/SimpleCircuitBreakerTest.java
+java system_design.resiliency.SimpleCircuitBreakerTest
 ```
 
 ---

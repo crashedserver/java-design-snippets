@@ -1,4 +1,4 @@
-package system_design;
+package system_design.resiliency;
 
 public class SimpleCircuitBreakerTest {
     public static void main(String[] args) throws InterruptedException {

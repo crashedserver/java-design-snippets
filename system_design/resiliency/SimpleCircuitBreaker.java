@@ -1,4 +1,4 @@
-package system_design;
+package system_design.resiliency;
 
 import java.time.Instant;
 import java.util.concurrent.locks.ReentrantLock;
