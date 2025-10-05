@@ -16,5 +16,11 @@ Welcome! This repository is a collection of concise and practical Java implement
 - Each subfolder contains:
   - Java implementation
   - Minimal usage example or test
-  - README explaining logic
+  - README explaining logic and concepts
 
+## Featured Implementations
+
+*   **[Raft Consensus Algorithm](./system_design/consensus/raft/README.md):** A complete, from-scratch implementation of the Raft algorithm, demonstrating leader election, log replication, and fault tolerance.
+*   **[LRU Cache](./data_structures/cache/):** An efficient, thread-safe Least Recently Used (LRU) cache using a HashMap and a Doubly Linked List for O(1) get and put operations.
+*   **[Circuit Breaker](./system_design/resiliency/):** A classic stability pattern to prevent cascading failures in distributed systems.
+*   **[Consistent Hashing](./system_design/scalability/):** A clear demonstration of consistent hashing, including an advanced version with virtual nodes for better key distribution.
