@@ -1,3 +1,19 @@
+/*
+ * Copyright 2024 crashedserver
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package data_structures.cache;
 
 import java.time.Instant;
@@ -10,8 +26,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * A simple cache implementation where entries expire after a fixed time-to-live (TTL).
- * This cache uses a background thread to periodically scan and evict expired entries.
+ * A simple cache implementation where entries expire after a fixed time-to-live
+ * (TTL).
+ * This cache uses a background thread to periodically scan and evict expired
+ * entries.
  */
 public class SimpleTTLCache {
     // Use a ConcurrentHashMap for thread-safe get/put operations.
@@ -35,7 +53,8 @@ public class SimpleTTLCache {
         // Schedule the eviction task to run periodically.
         long scheduleIntervalMillis = 3_000;
         long initialDelayForSchedulerMillis = 1_000;
-        executorService.scheduleAtFixedRate(new TTLTask(), initialDelayForSchedulerMillis, scheduleIntervalMillis, TimeUnit.MILLISECONDS);
+        executorService.scheduleAtFixedRate(new TTLTask(), initialDelayForSchedulerMillis, scheduleIntervalMillis,
+                TimeUnit.MILLISECONDS);
     }
 
     public void put(String key, String value) {
@@ -63,7 +82,8 @@ public class SimpleTTLCache {
     }
 
     /**
-     * Shuts down the background eviction thread. This should be called when the cache
+     * Shuts down the background eviction thread. This should be called when the
+     * cache
      * is no longer needed to prevent resource leaks.
      */
     public void shutdown() {
@@ -96,11 +116,12 @@ public class SimpleTTLCache {
     /**
      * An inner class to hold the cached value and its creation timestamp.
      */
-    private static class CacheEntry{
+    private static class CacheEntry {
         String value;
         long creationTimestampMillis;
-        public CacheEntry(String value){
-            this.value=value;
+
+        public CacheEntry(String value) {
+            this.value = value;
             this.creationTimestampMillis = Instant.now().toEpochMilli();
         }
     }

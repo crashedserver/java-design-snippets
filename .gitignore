@@ -60,3 +60,5 @@ raft_node_4/raft_log.dat
 raft_node_4/raft_term.dat
 raft_node_4/raft_voted_for.dat
 system_design/consensus/raft/server/.DS_Store
+.DS_Store
+.pmdCache

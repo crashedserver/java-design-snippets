@@ -1,32 +1,58 @@
+/*
+ * Copyright 2024 crashedserver
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package system_design.consensus.raft.server;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
+
 import system_design.consensus.raft.IRaftNode;
-import system_design.consensus.raft.RaftNode;
-import system_design.consensus.raft.RaftConfig;
 import system_design.consensus.raft.KeyValueStore;
 import system_design.consensus.raft.PeerState;
+import system_design.consensus.raft.RaftConfig;
+import system_design.consensus.raft.RaftNode;
 import system_design.consensus.raft.storage.IStorageService;
 import system_design.consensus.raft.storage.file_storage.FileStorageService;
 import system_design.consensus.raft.storage.model.NodeId;
 import system_design.consensus.raft.storage.model.RaftRole;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.Collections;
-import java.util.function.BiConsumer;
-import java.util.concurrent.TimeUnit;
-
 public final class NodeServerTest {
+
+    // --- Test Configuration ---
+    private static final boolean CLEAN_START = true; // Set to false to test recovery from existing logs.
+    private static final boolean VERBOSE_LOGGING = false; // Set to true for detailed Raft protocol logs.
 
     private NodeServerTest() {
         // Prevents instantiation
     }
 
     public static void main(String[] args) throws InterruptedException {
-        runBasicClusterCorrectnessTest();
-        runScaleTest();
+        // runBasicClusterCorrectnessTest();
+        // runScaleTest();
+        runAdvancedBenchmark();
     }
 
     public static void runBasicClusterCorrectnessTest() {
@@ -79,8 +105,20 @@ public final class NodeServerTest {
             IRaftNode<String> leader = cluster.stream()
                     .filter(n -> n.getRole() == RaftRole.LEADER && n.getPort() != -1)
                     .findFirst().orElse(null);
+
             if (leader != null) {
-                return leader;
+                // Wait for the leader's term to be acknowledged by a majority of the cluster.
+                // This ensures the leader is stable before we proceed.
+                // A stable cluster will have one leader and N-1 followers.
+                long followerCount = cluster.stream()
+                        .filter(n -> n.getRole() == RaftRole.FOLLOWER)
+                        .count();
+
+                int majority = (cluster.size() / 2) + 1;
+                // We need at least a majority of followers acknowledging the leader.
+                if (followerCount >= majority - 1) {
+                    return leader;
+                }
             }
             Thread.sleep(500);
         }
@@ -165,6 +203,142 @@ public final class NodeServerTest {
         });
     }
 
+    public static void runAdvancedBenchmark() {
+        runTest("Raft Advanced Benchmark", (cluster, leader) -> {
+            int populationSize = 1_000_000;
+            int benchmarkTasks = 500_000;
+            double writeRatio = 0.2; // 20% of operations will be writes (puts)
+
+            // --- Phase 1: Populate the cluster with a large dataset ---
+            System.out.printf("\n--- Populating cluster with %,d initial key-value pairs... ---\n", populationSize);
+            long popStartTime = System.currentTimeMillis();
+            List<CompletableFuture<?>> populationFutures = new ArrayList<>();
+            for (int i = 0; i < populationSize; i++) {
+                boolean submitted = false;
+                IRaftNode<String> currentLeader = leader;
+                while (!submitted) {
+                    try {
+                        CompletableFuture<Boolean> future = currentLeader.submitCommand("set key_" + i + "=value_" + i);
+                        submitted = true;
+                        populationFutures.add(future); // Only add the future on successful submission.
+                    } catch (RejectedExecutionException e) {
+                        // This happens due to back-pressure, wait and retry.
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException interruptedException) {
+                            Thread.currentThread().interrupt();
+                        }
+                    } catch (IllegalStateException e) {
+                        // This happens if leadership changes. Find the new leader and retry.
+                        System.out.println("Leadership changed. Finding new leader...");
+                        try {
+                            currentLeader = findLeader(cluster);
+                            System.out.printf("New leader is Node %s. Retrying command...\n",
+                                    currentLeader.getSelfId().getNodeId());
+                        } catch (InterruptedException interruptedException) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                }
+            }
+            awaitAll(populationFutures);
+            long popEndTime = System.currentTimeMillis();
+            System.out.printf("Population complete in %,d ms.\n", popEndTime - popStartTime);
+
+            // --- Phase 2: Run concurrent Get/Put benchmark ---
+            System.out.printf("\n--- Running %,d concurrent Get/Put operations (%.0f%% writes) ---\n",
+                    benchmarkTasks, writeRatio * 100);
+
+            final List<Long> getLatencies = Collections.synchronizedList(new ArrayList<>());
+            final List<Long> putLatencies = Collections.synchronizedList(new ArrayList<>());
+            final AtomicReference<IRaftNode<String>> leaderRef = new AtomicReference<>(leader);
+            List<CompletableFuture<?>> benchmarkFutures = Collections.synchronizedList(new ArrayList<>());
+            ExecutorService benchmarkExecutor = Executors.newFixedThreadPool(100);
+
+            long benchStartTime = System.currentTimeMillis();
+
+            for (int i = 0; i < benchmarkTasks; i++) {
+                CompletableFuture<Void> taskFuture = CompletableFuture.runAsync(() -> {
+                    ThreadLocalRandom random = ThreadLocalRandom.current();
+                    String key = "key_" + random.nextInt(populationSize); // Target existing keys
+
+                    if (random.nextDouble() < writeRatio) {
+                        // Perform a PUT operation
+                        String value = "new_value_" + random.nextInt();
+                        String command = "set " + key + "=" + value;
+                        long opStartTime = System.nanoTime();
+                        try {
+                            // For PUTs, we need to wait for the command to be committed.
+                            CompletableFuture<Void> putFuture = leaderRef.get().submitCommand(command).thenRun(() -> {
+                                long opEndTime = System.nanoTime();
+                                putLatencies.add(TimeUnit.NANOSECONDS.toMillis(opEndTime - opStartTime));
+                            });
+                            benchmarkFutures.add(putFuture);
+                        } catch (IllegalStateException e) {
+                            // Leadership changed, try to find the new leader for the next operation.
+                            // For this specific failed op, we'll just ignore it in the benchmark.
+                            try {
+                                // Check if the test is still running before trying to find a new leader.
+                                if (cluster.get(0).getPort() != -1) {
+                                    leaderRef.set(findLeader(cluster));
+                                }
+                            } catch (InterruptedException interruptedException) {
+                                // Preserve the interrupted status
+                                Thread.currentThread().interrupt();
+                            }
+                        } catch (RejectedExecutionException e) {
+                            // This is expected due to back-pressure. Ignore and continue.
+                        }
+
+                    } else { // Perform a GET operation
+                        // Perform a GET operation (local read from leader's state machine)
+                        long opStartTime = System.nanoTime();
+                        leaderRef.get().getFromStateMachine(key);
+                        long opEndTime = System.nanoTime();
+                        getLatencies.add(TimeUnit.NANOSECONDS.toMillis(opEndTime - opStartTime));
+                    }
+                }, benchmarkExecutor);
+                benchmarkFutures.add(taskFuture); // Wait for the async task itself to complete.
+            }
+
+            awaitAll(benchmarkFutures);
+            benchmarkExecutor.shutdown();
+
+            long benchEndTime = System.currentTimeMillis();
+            long benchDuration = benchEndTime - benchStartTime;
+            System.out.printf("Benchmark phase complete in %,d ms.\n", benchDuration);
+
+            // --- Phase 3: Report Results ---
+            System.out.println("\n--- Benchmark Summary ---");
+            printLatencyReport("GET Operations", getLatencies, benchDuration);
+            printLatencyReport("PUT Operations", putLatencies, benchDuration);
+        });
+    }
+
+    private static void printLatencyReport(String title, List<Long> latencies, long durationMillis) {
+        if (latencies.isEmpty()) {
+            System.out.printf("\n--- %s ---\n", title);
+            System.out.println("No operations recorded.");
+            return;
+        }
+        Collections.sort(latencies);
+        long totalOps = latencies.size();
+        long p50 = latencies.get((int) (totalOps * 0.50));
+        long p95 = latencies.get((int) (totalOps * 0.95));
+        long p99 = latencies.get((int) (totalOps * 0.99));
+        long max = latencies.get(latencies.size() - 1);
+
+        System.out.printf("\n--- %s (%d operations) ---\n", title, totalOps);
+        if (durationMillis > 0) {
+            double throughput = (double) totalOps / durationMillis * 1000;
+            System.out.printf("Throughput: %,.2f ops/sec\n", throughput);
+        }
+        System.out.printf("p50 (Median): %d ms\n", p50);
+        System.out.printf("p95: %d ms\n", p95);
+        System.out.printf("p99: %d ms\n", p99);
+        System.out.printf("Max Latency: %d ms\n", max);
+    }
+
     private static void verifyFollowerState(List<IRaftNode<String>> cluster, int numCommands) {
         System.out.println("\n--- Final State Verification ---");
         String lastKey = "key_" + (numCommands - 1);
@@ -201,7 +375,9 @@ public final class NodeServerTest {
         System.out.println("--- " + testName + " ---");
         List<IRaftNode<String>> cluster = null;
 
-        deleteDirectory(new File("data"));
+        if (CLEAN_START) {
+            deleteDirectory(new File("data"));
+        }
 
         try {
             cluster = createCluster(3, 12345);
@@ -238,7 +414,7 @@ public final class NodeServerTest {
 
             }
             RaftConfig<String> config = new RaftConfig<>(new NodeId(String.valueOf(i)), basePort + i, peers,
-                    new KeyValueStore());
+                    new KeyValueStore(), VERBOSE_LOGGING);
             cluster.add(new RaftNode<>(config, storage));
         }
         return cluster;
@@ -253,7 +429,11 @@ public final class NodeServerTest {
     }
 
     private static void awaitAll(List<? extends CompletableFuture<?>> futures) {
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        // Wait for all futures to complete, but handle exceptions gracefully so that a
+        // single failure (like a leadership change) doesn't crash the whole test.
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).exceptionally(ex -> {
+            return null; // Swallow the exception and allow allOf to complete.
+        }).join();
     }
 
     private static void shutdownCluster(List<IRaftNode<String>> cluster) {

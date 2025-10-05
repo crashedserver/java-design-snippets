@@ -1,12 +1,28 @@
+/*
+ * Copyright 2024 crashedserver
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package system_design.consensus.raft.client;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.nio.charset.StandardCharsets;
 
 import system_design.consensus.raft.rpc.AppendEntriesRPC;
 import system_design.consensus.raft.rpc.RequestVoteRPC;
@@ -98,16 +114,26 @@ public class NodeClient {
 
     private void invalidateConnection(String host, int port) {
         String target = host + ":" + port;
-        try (Socket socket = connectionPool.remove(target)) {
-            if (socket != null) {
-                try {
-                    socket.close();
-                } catch (IOException e) {
-                    System.out.println("Error during socket close !");
-                }
+        Socket socket = connectionPool.remove(target);
+        if (socket != null) {
+            try {
+                socket.close();
+            } catch (IOException e) {
+                // It's safe to ignore exceptions when closing a socket during cleanup.
+                // The primary goal is to release the resource, and an error here is
+                // non-critical.
             }
-        } catch (IOException e) {
-            System.out.println("Error during invalidation of a connection !");
         }
+    }
+
+    public void close() {
+        for (Socket socket : connectionPool.values()) {
+            try {
+                socket.close();
+            } catch (IOException e) {
+                // It's safe to ignore exceptions during a final shutdown cleanup.
+            }
+        }
+        connectionPool.clear();
     }
 }

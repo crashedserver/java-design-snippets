@@ -1,7 +1,26 @@
+/*
+ * Copyright 2024 crashedserver
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package system_design.consensus.raft;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -11,18 +30,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import system_design.consensus.raft.client.NodeClient;
-import system_design.consensus.raft.rpc.RequestVoteRPC;
 import system_design.consensus.raft.rpc.AppendEntriesRPC;
+import system_design.consensus.raft.rpc.RequestVoteRPC;
 import system_design.consensus.raft.server.IRaftServer;
 import system_design.consensus.raft.server.NodeServer;
-import system_design.consensus.raft.storage.model.NodeId;
 import system_design.consensus.raft.storage.IStorageService;
-import java.util.List;
 import system_design.consensus.raft.storage.model.CommandLog;
 import system_design.consensus.raft.storage.model.LogEntry;
+import system_design.consensus.raft.storage.model.NodeId;
 import system_design.consensus.raft.storage.model.NodeState;
 import system_design.consensus.raft.storage.model.RaftRole;
-import java.util.Map;
 import system_design.consensus.raft.storage.model.Term;
 
 /**
@@ -40,19 +57,25 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
     private final ScheduledExecutorService electionTimerExecutor;
     private ScheduledFuture<?> electionTimerFuture;
     private final ScheduledExecutorService heartbeatExecutor;
+    private final ExecutorService diskIoExecutor;
+    private final ExecutorService networkIoExecutor;
     private final ScheduledExecutorService applierExecutor;
     private final long minElectionTimeoutMillis;
     private final long maxElectionTimeoutMillis;
+    private final int heartbeatIntervalMillis;
     private final IStorageService<T> storageService;
     private final StateMachine<T> stateMachine;
     private final IRaftLogic<T> raftLogic;
+    private final boolean verboseLogging;
     private final Map<Integer, CompletableFuture<Boolean>> pendingCommands;
+    private static final int MAX_PENDING_COMMANDS = 20000; // Back-pressure limit
 
     public RaftNode(RaftConfig<T> config, IStorageService<T> storageService) {
         this.selfId = config.selfId();
         this.storageService = storageService;
         this.stateMachine = config.stateMachine();
         this.peers = config.initialPeers();
+        this.verboseLogging = config.verboseLogging();
 
         // Load persistent state from storage on startup.
         Term savedTerm = storageService.loadTerm();
@@ -78,6 +101,16 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
             t.setDaemon(true);
             return t;
         });
+        this.diskIoExecutor = Executors.newFixedThreadPool(4, r -> {
+            Thread t = new Thread(r, "RaftNode-DiskIO-" + selfId.getNodeId());
+            t.setDaemon(true);
+            return t;
+        });
+        this.networkIoExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2, r -> {
+            Thread t = new Thread(r, "RaftNode-NetworkIO-" + selfId.getNodeId());
+            t.setDaemon(true);
+            return t;
+        });
         // Use a single thread for the applier to ensure committed entries are applied
         // sequentially and in order, which is a core requirement of Raft.
         this.applierExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -85,8 +118,9 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
             t.setDaemon(true);
             return t;
         });
-        this.minElectionTimeoutMillis = 150;
-        this.maxElectionTimeoutMillis = 300;
+        this.minElectionTimeoutMillis = config.minElectionTimeoutMillis();
+        this.maxElectionTimeoutMillis = config.maxElectionTimeoutMillis();
+        this.heartbeatIntervalMillis = config.heartbeatIntervalMillis();
         this.raftLogic = new RaftLogic<>(this);
         this.pendingCommands = new ConcurrentHashMap<>();
     }
@@ -117,16 +151,17 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
      * from a leader.
      */
     void resetElectionTimer() {
+        // Do not schedule a new timer if the executor is shutting down.
+        if (electionTimerExecutor.isShutdown()) {
+            return;
+        }
+
         if (electionTimerFuture != null && !electionTimerFuture.isDone()) {
             electionTimerFuture.cancel(false);
         }
         long randomTimeout = ThreadLocalRandom.current().nextLong(minElectionTimeoutMillis,
                 maxElectionTimeoutMillis + 1);
         electionTimerFuture = electionTimerExecutor.schedule(this::startElection, randomTimeout, TimeUnit.MILLISECONDS);
-    }
-
-    public List<Peer> getPeers() {
-        return this.peers.stream().map(PeerState::getPeer).collect(Collectors.toList());
     }
 
     // --- Getters for RaftLogic ---
@@ -140,7 +175,12 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
         return this.peers;
     }
 
-    NodeState<T> getNodeState() {
+    public List<Peer> getPeers() {
+        return this.peers.stream().map(PeerState::getPeer).collect(Collectors.toList());
+    }
+
+    @Override
+    public NodeState<T> getNodeState() {
         return nodeState;
     }
 
@@ -150,6 +190,26 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
 
     NodeClient getClient() {
         return client;
+    }
+
+    ExecutorService getDiskIoExecutor() {
+        return diskIoExecutor;
+    }
+
+    ExecutorService getNetworkIoExecutor() {
+        return networkIoExecutor;
+    }
+
+    long getMinElectionTimeoutMillis() {
+        return minElectionTimeoutMillis;
+    }
+
+    boolean isVerboseLoggingEnabled() {
+        return verboseLogging;
+    }
+
+    Map<Integer, CompletableFuture<Boolean>> getPendingCommands() {
+        return pendingCommands;
     }
 
     @Override
@@ -162,7 +222,10 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
         server.stop();
         electionTimerExecutor.shutdownNow();
         heartbeatExecutor.shutdownNow();
+        diskIoExecutor.shutdownNow();
+        networkIoExecutor.shutdownNow();
         applierExecutor.shutdownNow();
+        client.close();
     }
 
     public CommandLog<T> getLog() {
@@ -180,7 +243,12 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
     public CompletableFuture<Boolean> submitCommand(T command) {
         if (nodeState.getCurrentRole() != RaftRole.LEADER) {
             // In a real system, you would redirect the client to the leader.
-            return CompletableFuture.failedFuture(new IllegalStateException("This node is not the leader."));
+            throw new IllegalStateException("This node is not the leader.");
+        }
+
+        // Back-pressure: If too many commands are in-flight, reject new ones.
+        if (pendingCommands.size() > MAX_PENDING_COMMANDS) {
+            throw new java.util.concurrent.RejectedExecutionException("Too many pending commands.");
         }
 
         CompletableFuture<Boolean> future = new CompletableFuture<>();
@@ -191,12 +259,10 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
             pendingCommands.put(newIndex, future);
 
             // The leader's persistence can happen in parallel with replication.
-            CompletableFuture.runAsync(() -> {
+            CompletableFuture.runAsync(() -> { // Use the dedicated disk I/O executor.
                 storageService.appendLogEntries(List.of(newEntry));
-            });
+            }, diskIoExecutor);
         }
-
-        raftLogic.replicateLogToPeers();
 
         return future;
     }
@@ -212,7 +278,6 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
      * Transitions the node to the Leader state and starts sending heartbeats.
      */
     void becomeLeader() {
-        // Use a synchronized block to ensure the transition is atomic.
         synchronized (nodeState) {
             // A node can only become a leader if it is currently a candidate.
             if (nodeState.getCurrentRole() != RaftRole.CANDIDATE) {
@@ -225,28 +290,35 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
                     new IllegalStateException("Leadership changed before command could be committed.")));
             pendingCommands.clear();
         }
+
         System.out.printf("!!! Node %s has become the LEADER for term %d !!!\n", selfId.getNodeId(),
                 nodeState.getCurrentTerm().getTerm());
-        // Immediately cancel the election timer, as leaders don't have one.
+
+        // Immediately cancel the election timer.
         if (electionTimerFuture != null) {
             electionTimerFuture.cancel(false);
         }
 
-        // Immediately send a heartbeat to establish authority. This is a synchronous
-        // call.
-        raftLogic.replicateLogToPeers();
-
-        // Initialize nextIndex for all peers to the leader's last log index + 1.
-        synchronized (nodeState) {
-            for (PeerState peerState : peers) {
-                peerState.setNextIndex(nodeState.getLog().getLastLogIndex() + 1);
-            }
+        // Initialize peer states.
+        for (PeerState peerState : peers) {
+            peerState.setNextIndex(nodeState.getLog().getLastLogIndex() + 1);
         }
 
-        // Start sending heartbeats to all peers.
-        long heartbeatInterval = 50; // ms
-        heartbeatExecutor.scheduleAtFixedRate(raftLogic::replicateLogToPeers, 0, heartbeatInterval,
-                TimeUnit.MILLISECONDS);
+        // Synchronously send the first heartbeat and wait for a majority to reply.
+        // This is critical to establishing authority before accepting client
+        // commands.
+        boolean authorityEstablished = raftLogic.replicateLogToPeers(true);
+
+        if (authorityEstablished) {
+            // Now, start the periodic, asynchronous heartbeats.
+            heartbeatExecutor.scheduleAtFixedRate(raftLogic::replicateLogToPeers, heartbeatIntervalMillis,
+                    heartbeatIntervalMillis,
+                    TimeUnit.MILLISECONDS);
+        } else {
+            // If authority could not be established, step down immediately to allow a new
+            // election to proceed cleanly.
+            raftLogic.stepDown(nodeState.getCurrentTerm());
+        }
     }
 
     // --- RPC Handler Methods ---
@@ -269,8 +341,12 @@ public class RaftNode<T> implements IRaftNode<T>, IRaftServer {
                         }
                         nodeState.setLastAppliedIndex(new AtomicLong(indexToApply));
 
-                        if (pendingCommands.containsKey((int) indexToApply)) {
-                            pendingCommands.remove((int) indexToApply).complete(true);
+                        CompletableFuture<Boolean> future = pendingCommands.remove((int) indexToApply);
+                        // Complete the future outside the synchronized block to avoid holding the lock
+                        // while running client callback logic.
+                        if (future != null) {
+                            // Use a separate thread to avoid blocking the applier thread.
+                            CompletableFuture.runAsync(() -> future.complete(true), diskIoExecutor);
                         }
                     }
                 }

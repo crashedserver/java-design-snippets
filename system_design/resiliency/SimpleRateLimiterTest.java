@@ -1,3 +1,19 @@
+/*
+ * Copyright 2024 crashedserver
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package system_design.resiliency;
 
 public class SimpleRateLimiterTest {
@@ -8,7 +24,8 @@ public class SimpleRateLimiterTest {
         SimpleRateLimiter rateLimiter = new SimpleRateLimiter(maxRequests, windowSizeInMillis);
 
         System.out.println("--- Fixed Window Rate Limiter Demonstration ---");
-        System.out.println("Configuration: " + maxRequests + " requests per " + windowSizeInMillis / 1000 + " seconds.");
+        System.out
+                .println("Configuration: " + maxRequests + " requests per " + windowSizeInMillis / 1000 + " seconds.");
 
         // --- Scenario 1: Exceeding the limit for a client ---
         String client1 = "user-A";
@@ -20,12 +37,14 @@ public class SimpleRateLimiterTest {
 
         // --- Scenario 2: A different client is not affected ---
         String client2 = "user-B";
-        System.out.println("\n2. Simulating a request for a different client '" + client2 + "' to show they are independent.");
+        System.out.println(
+                "\n2. Simulating a request for a different client '" + client2 + "' to show they are independent.");
         boolean allowedForClient2 = rateLimiter.allowRequest(client2);
         System.out.println("   Request for " + client2 + ": " + (allowedForClient2 ? "Allowed" : "Denied"));
 
         // --- Scenario 3: Waiting for the window to reset ---
-        System.out.println("\n3. Waiting for the time window to reset (" + (windowSizeInMillis / 1000) + " seconds)...");
+        System.out
+                .println("\n3. Waiting for the time window to reset (" + (windowSizeInMillis / 1000) + " seconds)...");
         Thread.sleep(windowSizeInMillis);
 
         System.out.println("\nWindow has reset for '" + client1 + "'. New requests should be allowed.");

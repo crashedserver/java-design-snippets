@@ -1,3 +1,19 @@
+/*
+ * Copyright 2024 crashedserver
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package system_design.consensus.raft.storage.model;
 
 import java.util.Map;
@@ -18,7 +34,7 @@ public class NodeState<T> {
     private NodeId votedFor;
     private CommandLog<T> log;
 
-    // --- Volatile state (re-initialized after a restart) ---
+    // --- Im-memory state (re-initialized after a restart) ---
     private AtomicLong commitIndex;
     private AtomicLong lastAppliedIndex;
 
@@ -51,6 +67,10 @@ public class NodeState<T> {
         this.votedFor = votedFor;
         this.log = log;
         this.commitIndex = new AtomicLong(0);
+        // lastApplied is always initialized to 0 on startup. The state machine will be
+        // rebuilt by the applier thread, which will apply log entries from index 1
+        // up to the commitIndex communicated by the leader. This ensures the state
+        // machine is correctly restored after a restart.
         this.lastAppliedIndex = new AtomicLong(0);
     }
 

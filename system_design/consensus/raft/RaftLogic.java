@@ -1,9 +1,28 @@
+/*
+ * Copyright 2024 crashedserver
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package system_design.consensus.raft;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -29,6 +48,7 @@ public class RaftLogic<T> implements IRaftLogic<T> {
     private final NodeClient client;
     private final NodeId selfId;
     private final List<PeerState> peers;
+    private final ExecutorService networkIoExecutor;
     private AtomicInteger votesReceived;
 
     /**
@@ -43,6 +63,7 @@ public class RaftLogic<T> implements IRaftLogic<T> {
         this.client = raftNode.getClient();
         this.selfId = raftNode.getSelfId();
         this.peers = raftNode.getPeerStates();
+        this.networkIoExecutor = raftNode.getNetworkIoExecutor();
     }
 
     /**
@@ -65,8 +86,10 @@ public class RaftLogic<T> implements IRaftLogic<T> {
         storageService.saveTerm(nodeState.getCurrentTerm());
         nodeState.setVotedFor(selfId);
         storageService.saveVotedFor(selfId);
-        System.out.printf("Node %s starting election for term %d\n", selfId.getNodeId(),
-                nodeState.getCurrentTerm().getTerm());
+        if (raftNode.isVerboseLoggingEnabled()) {
+            System.out.printf("Node %s starting election for term %d\n", selfId.getNodeId(),
+                    nodeState.getCurrentTerm().getTerm());
+        }
         // Self vote
         this.votesReceived = new AtomicInteger(1);
 
@@ -86,11 +109,16 @@ public class RaftLogic<T> implements IRaftLogic<T> {
                 }
                 try {
                     RaftNode.Peer peer = peerState.getPeer();
-                    System.out.printf("   -> Node %s sending RequestVote to %s:%d\n", selfId.getNodeId(), peer.host(),
-                            peer.port());
+                    if (raftNode.isVerboseLoggingEnabled()) {
+                        System.out.printf("   -> Node %s sending RequestVote to %s:%d\n", selfId.getNodeId(),
+                                peer.host(),
+                                peer.port());
+                    }
                     RequestVoteRPC.Reply reply = client.sendRequestVote(peer.host(), peer.port(), request);
-                    System.out.printf("   <- Node %s received vote reply from %s:%d (Granted: %b)\n",
-                            selfId.getNodeId(), peer.host(), peer.port(), reply.voteGranted());
+                    if (raftNode.isVerboseLoggingEnabled()) {
+                        System.out.printf("   <- Node %s received vote reply from %s:%d (Granted: %b)\n",
+                                selfId.getNodeId(), peer.host(), peer.port(), reply.voteGranted());
+                    }
 
                     if (reply.voteGranted() && nodeState.getCurrentRole() == RaftRole.CANDIDATE) {
                         int currentVotes = votesReceived.incrementAndGet();
@@ -105,7 +133,7 @@ public class RaftLogic<T> implements IRaftLogic<T> {
                     System.err.printf("   !! Node %s failed to send RequestVote to %s:%d: %s\n", selfId.getNodeId(),
                             peerState.getPeer().host(), peerState.getPeer().port(), e.getMessage());
                 }
-            });
+            }, networkIoExecutor);
         }
     }
 
@@ -138,57 +166,92 @@ public class RaftLogic<T> implements IRaftLogic<T> {
      * point of log divergence and repair it.
      */
     @Override
+    public boolean replicateLogToPeers(boolean waitForMajority) {
+        if (waitForMajority) {
+            int majorityCount = (peers.size() / 2) + 1;
+            CountDownLatch majorityLatch = new CountDownLatch(majorityCount);
+            for (PeerState peerState : peers) {
+                networkIoExecutor.submit(() -> {
+                    if (replicateToPeer(peerState)) {
+                        majorityLatch.countDown();
+                    }
+                });
+            }
+            try {
+                // Block until a majority of peers have successfully replied.
+                long assertionTimeout = raftNode.getMinElectionTimeoutMillis() / 2L;
+                boolean majorityReached = majorityLatch.await(assertionTimeout,
+                        TimeUnit.MILLISECONDS);
+                if (!majorityReached) {
+                    System.err
+                            .println("Warning: Timed out waiting for majority acknowledgment on leadership assertion.");
+                }
+                return majorityReached;
+            } catch (Exception e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        // This path should not be taken for synchronous calls.
+        return false;
+    }
+
+    @Override
     public void replicateLogToPeers() {
         for (PeerState peerState : peers) {
-            CompletableFuture.runAsync(() -> {
-                int prevLogIndex = peerState.getNextIndex() - 1;
-                Term prevLogTerm = new Term(0);
-                if (prevLogIndex > 0) {
-                    LogEntry<T> prevEntry = nodeState.getLog().getEntry(prevLogIndex);
-                    // Handle the case where the leader's log has been truncated.
-                    if (prevEntry != null) {
-                        prevLogTerm = prevEntry.getTerm();
+            networkIoExecutor.submit(() -> replicateToPeer(peerState));
+        }
+    }
+
+    private boolean replicateToPeer(PeerState peerState) {
+        int prevLogIndex = peerState.getNextIndex() - 1;
+        Term prevLogTerm = new Term(0);
+        if (prevLogIndex > 0) {
+            LogEntry<T> prevEntry = nodeState.getLog().getEntry(prevLogIndex);
+            // Handle the case where the leader's log has been truncated.
+            if (prevEntry != null) {
+                prevLogTerm = prevEntry.getTerm();
+            }
+        }
+
+        List<LogEntry<T>> entriesToSend = nodeState.getLog().getEntriesFrom(peerState.getNextIndex());
+
+        AppendEntriesRPC.Request<T> request = new AppendEntriesRPC.Request<>(
+                nodeState.getCurrentTerm(), selfId.getNodeId(), prevLogIndex, prevLogTerm, entriesToSend,
+                (int) nodeState.getCommitIndex().get());
+        try {
+            RaftNode.Peer peer = peerState.getPeer();
+            AppendEntriesRPC.Reply reply = client.sendAppendEntries(peer.host(), peer.port(), request);
+
+            boolean shouldAdvanceCommit;
+            synchronized (nodeState) {
+                if (reply.success()) {
+                    // If successful, update nextIndex and matchIndex for the follower.
+                    peerState.setNextIndex(request.prevLogIndex() + entriesToSend.size() + 1);
+                    peerState.setMatchIndex(request.prevLogIndex() + entriesToSend.size());
+                    shouldAdvanceCommit = true;
+                } else {
+                    // If AppendEntries fails because of log inconsistency, decrement nextIndex and
+                    // retry.
+                    if (reply.term().getTerm() <= nodeState.getCurrentTerm().getTerm()) {
+                        // Only decrement if the reply is not from a node with a higher term.
+                        peerState.setNextIndex(Math.max(1, peerState.getNextIndex() - 1));
                     }
+                    shouldAdvanceCommit = false;
                 }
-
-                List<LogEntry<T>> entriesToSend = nodeState.getLog().getEntriesFrom(peerState.getNextIndex());
-
-                AppendEntriesRPC.Request<T> request = new AppendEntriesRPC.Request<>(
-                        nodeState.getCurrentTerm(), selfId.getNodeId(), prevLogIndex, prevLogTerm, entriesToSend,
-                        (int) nodeState.getCommitIndex().get());
-                try {
-                    RaftNode.Peer peer = peerState.getPeer();
-                    AppendEntriesRPC.Reply reply = client.sendAppendEntries(peer.host(), peer.port(), request);
-
-                    boolean shouldAdvanceCommit;
-                    synchronized (nodeState) {
-                        if (reply.success()) {
-                            // If successful, update nextIndex and matchIndex for the follower.
-                            peerState.setNextIndex(request.prevLogIndex() + entriesToSend.size() + 1);
-                            peerState.setMatchIndex(request.prevLogIndex() + entriesToSend.size());
-                            shouldAdvanceCommit = true;
-                        } else {
-                            // If AppendEntries fails because of log inconsistency, decrement nextIndex and
-                            // retry.
-                            if (reply.term().getTerm() <= nodeState.getCurrentTerm().getTerm()) {
-                                // Only decrement if the reply is not from a node with a higher term.
-                                peerState.setNextIndex(Math.max(1, peerState.getNextIndex() - 1));
-                            }
-                            shouldAdvanceCommit = false;
-                        }
-                    }
-                    if (shouldAdvanceCommit) {
-                        advanceCommitIndex();
-                    }
-                } catch (IOException e) {
-                    // Only log the error if the node is still running. This suppresses expected
-                    // errors during shutdown.
-                    if (raftNode.getPort() != -1 && peerState.shouldLogError()) {
-                        System.err.printf("Leader %s failed to send heartbeat to %s:%d: %s\n", selfId.getNodeId(),
-                                peerState.getPeer().host(), peerState.getPeer().port(), e.getMessage());
-                    }
-                }
-            });
+            }
+            if (shouldAdvanceCommit) {
+                advanceCommitIndex();
+            }
+            return reply.success();
+        } catch (IOException e) {
+            // Only log the error if the node is still running. This suppresses expected
+            // errors during shutdown.
+            if (raftNode.getPort() != -1 && peerState.shouldLogError()) {
+                System.err.printf("Leader %s failed to send heartbeat to %s:%d: %s\n", selfId.getNodeId(),
+                        peerState.getPeer().host(), peerState.getPeer().port(), e.getMessage());
+            }
+            return false;
         }
     }
 
@@ -246,8 +309,10 @@ public class RaftLogic<T> implements IRaftLogic<T> {
     @Override
     public RequestVoteRPC.Reply handleRequestVote(RequestVoteRPC.Request request) {
         synchronized (nodeState) {
-            System.out.printf("Node %s received RequestVote from %s for term %d.\n", selfId.getNodeId(),
-                    request.candidateId(), request.term().getTerm());
+            if (raftNode.isVerboseLoggingEnabled()) {
+                System.out.printf("Node %s received RequestVote from %s for term %d.\n", selfId.getNodeId(),
+                        request.candidateId(), request.term().getTerm());
+            }
 
             if (request.term().getTerm() > nodeState.getCurrentTerm().getTerm()) {
                 // If the request has a higher term, this node is stale. Step down to follower
@@ -273,8 +338,10 @@ public class RaftLogic<T> implements IRaftLogic<T> {
                 nodeState.setVotedFor(new NodeId(request.candidateId()));
                 storageService.saveVotedFor(nodeState.getVotedFor());
                 raftNode.resetElectionTimer();
-                System.out.printf(" -> Granting vote for %s in term %d\n", request.candidateId(),
-                        nodeState.getCurrentTerm().getTerm());
+                if (raftNode.isVerboseLoggingEnabled()) {
+                    System.out.printf(" -> Granting vote for %s in term %d\n", request.candidateId(),
+                            nodeState.getCurrentTerm().getTerm());
+                }
                 return new RequestVoteRPC.Reply(nodeState.getCurrentTerm(), true);
             } else {
                 // Reset the election timer even if the vote is denied. The receipt of a
@@ -309,12 +376,20 @@ public class RaftLogic<T> implements IRaftLogic<T> {
      * 
      * @param newTerm The new, higher term that was discovered.
      */
-    private void stepDown(Term newTerm) {
+    @Override
+    public void stepDown(Term newTerm) {
         nodeState.setCurrentTerm(newTerm);
         nodeState.setCurrentRole(RaftRole.FOLLOWER);
         nodeState.setVotedFor(null);
         storageService.saveVotedFor(null);
         storageService.saveTerm(nodeState.getCurrentTerm());
+
+        // When stepping down, fail any pending commands that this node was tracking as
+        // a leader.
+        raftNode.getPendingCommands().values().forEach(future -> future.completeExceptionally(
+                new IllegalStateException("Leadership changed before command could be committed.")));
+        raftNode.getPendingCommands().clear();
+
         raftNode.resetElectionTimer();
     }
 
@@ -334,9 +409,11 @@ public class RaftLogic<T> implements IRaftLogic<T> {
     @Override
     public AppendEntriesRPC.Reply handleAppendEntries(AppendEntriesRPC.Request<T> request) {
         synchronized (nodeState) {
-            if (!request.entries().isEmpty()) {
-                System.out.printf("Node %s received AppendEntries from %s for term %d.\n", selfId.getNodeId(),
-                        request.leaderId(), request.term().getTerm());
+            if (raftNode.isVerboseLoggingEnabled()) {
+                if (!request.entries().isEmpty()) {
+                    System.out.printf("Node %s received AppendEntries from %s for term %d.\n", selfId.getNodeId(),
+                            request.leaderId(), request.term().getTerm());
+                }
             }
 
             // Rule 1: Reply false if term < currentTerm
@@ -398,7 +475,9 @@ public class RaftLogic<T> implements IRaftLogic<T> {
             if (!entriesToAppend.isEmpty()) {
                 nodeState.getLog().appendAll(entriesToAppend);
                 storageService.appendLogEntries(entriesToAppend);
-                System.out.printf(" -> Appended %d new entries.\n", entriesToAppend.size());
+                if (raftNode.isVerboseLoggingEnabled()) {
+                    System.out.printf(" -> Appended %d new entries.\n", entriesToAppend.size());
+                }
             }
 
             // Rule 5: If leaderCommit > commitIndex, set commitIndex = min(leaderCommit,

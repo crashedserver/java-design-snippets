@@ -1,3 +1,19 @@
+/*
+ * Copyright 2024 crashedserver
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package system_design.consensus.raft.server;
 
 import java.io.IOException;
@@ -145,14 +161,14 @@ public class NodeServer implements AutoCloseable {
 
         @Override
         public void run() {
-            try (clientSocket;
-                    InputStream input = clientSocket.getInputStream();
-                    OutputStream output = clientSocket.getOutputStream()) {
+            try {
+                InputStream input = clientSocket.getInputStream();
+                OutputStream output = clientSocket.getOutputStream();
                 // Keep the connection open and handle multiple RPCs.
                 while (!clientSocket.isClosed()) {
                     // Read the 4-byte length prefix.
                     byte[] lengthBytes = input.readNBytes(4);
-                    if (lengthBytes.length == 0) {
+                    if (lengthBytes.length < 4) {
                         break; // Client closed the connection.
                     }
                     int length = java.nio.ByteBuffer.wrap(lengthBytes).getInt();
@@ -168,10 +184,11 @@ public class NodeServer implements AutoCloseable {
                         "Error handling client " + clientSocket.getRemoteSocketAddress() + ": " + e.getMessage());
             } finally {
                 try {
-                    clientSocket.close();
+                    if (clientSocket != null && !clientSocket.isClosed()) {
+                        clientSocket.close();
+                    }
                 } catch (IOException e) {
-                    System.out.println("Error during client socket close!");
-                }
+                    /* Ignore cleanup errors */ }
             }
         }
 
