@@ -1,0 +1,10 @@
+java:
+spring-boot: spring-core spring-context jackson logback
+jackson: jackson-core jackson-databind jackson-annotations
+logback: slf4j-api
+spring-core:
+spring-context: spring-core
+jackson-core:
+jackson-databind: jackson-core jackson-annotations
+jackson-annotations:
+slf4j-api:
