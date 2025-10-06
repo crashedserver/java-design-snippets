@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 crashedserver
+ * Copyright 2025 crashedserver
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,11 @@
 
 package system_design.resiliency;
 
-public class RetryWithExponentialBackOffTest {
+public final class RetryWithExponentialBackOffTest {
+
+    private RetryWithExponentialBackOffTest() {
+        // Preventing instantiation
+    }
 
     public static void main(String[] args) throws InterruptedException {
         RetryWithExponentialBackOff retryer = new RetryWithExponentialBackOff();
