@@ -93,7 +93,7 @@ public class SimpleTTLCache {
     /**
      * The background task that periodically scans the cache for expired entries.
      */
-    private class TTLTask implements Runnable {
+    private final class TTLTask implements Runnable {
         @Override
         public void run() {
             long now = Instant.now().toEpochMilli();
