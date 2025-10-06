@@ -16,12 +16,12 @@
 
 package system_design.resiliency;
 
-public class SimpleRateLimiterTest {
+public class FixedWindowRateLimiterTest {
     public static void main(String[] args) throws InterruptedException {
         // Configure a rate limiter: 5 requests per 10 seconds.
         int maxRequests = 5;
         long windowSizeInMillis = 10000;
-        FixedWindowRateLimiter rateLimiter = new FixedWindowRateLimiter(maxRequests, windowSizeInMillis);
+        ISimpleRateLimiter rateLimiter = new FixedWindowRateLimiter(maxRequests, windowSizeInMillis);
 
         System.out.println("--- Fixed Window Rate Limiter Demonstration ---");
         System.out

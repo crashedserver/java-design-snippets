@@ -20,11 +20,11 @@ javac system_design/resiliency/SimpleCircuitBreaker.java system_design/resilienc
 java system_design.resiliency.SimpleCircuitBreakerTest
 ```
 
-### 2. Simple rate Limiter
+### 2. Fixed Window Rate Limiter
 
 A rate limiter is a stability and fairness pattern that prevents a client from repeatedly trying to call a service that is likely to fail or can potentially use teh service unfairly with respect to other clients. This rate limiter is a very basic rate limiter implementation for learning purpose.
 
-*   **Implementation:** `SimplerateLimiter.java`
+*   **Implementation:** `FixedWindowRateLimiter.java`
 *   **Description:** A simple threadsafe implementation of the rate limiting pattern that based on a fixed window rate limiting startegy.
 
 #### How to Run the Test
@@ -32,8 +32,8 @@ A rate limiter is a stability and fairness pattern that prevents a client from r
 From the root `java-design-snippets` directory, you can compile and run the test to see the state transitions in action:
 
 ```bash
-javac system_design/resiliency/SimpleRateLimiter.java system_design/resiliency/SimpleRateLimiterTest.java
-java system_design.resiliency.SimpleRateLimiterTest
+javac system_design/resiliency/FixedWindowRateLimiter.java system_design/resiliency/FixedWindowRateLimiterTest.java
+java system_design.resiliency.FixedWindowRateLimiterTest
 ```
 
 ### 3. Retry with Exponential Backoff 
