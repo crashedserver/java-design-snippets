@@ -22,21 +22,37 @@ java system_design.resiliency.SimpleCircuitBreakerTest
 
 ### 2. Fixed Window Rate Limiter
 
-A rate limiter is a stability and fairness pattern that prevents a client from repeatedly trying to call a service that is likely to fail or can potentially use teh service unfairly with respect to other clients. This rate limiter is a very basic rate limiter implementation for learning purpose.
+A rate limiter is a stability and fairness pattern that prevents a client from overwhelming a service. This implementation uses the **Fixed Window Counter** algorithm.
 
 *   **Implementation:** `FixedWindowRateLimiter.java`
-*   **Description:** A simple threadsafe implementation of the rate limiting pattern that based on a fixed window rate limiting startegy.
+*   **Description:** A simple, thread-safe implementation of the Fixed Window rate-limiting strategy. It's easy to understand but has limitations regarding traffic bursts at window boundaries.
 
 #### How to Run the Test
 
 From the root `java-design-snippets` directory, you can compile and run the test to see the state transitions in action:
 
 ```bash
-javac system_design/resiliency/FixedWindowRateLimiter.java system_design/resiliency/FixedWindowRateLimiterTest.java
+javac system_design/resiliency/FixedWindowRateLimiter.java system_design/resiliency/FixedWindowRateLimiterTest.java 
 java system_design.resiliency.FixedWindowRateLimiterTest
 ```
 
-### 3. Retry with Exponential Backoff 
+### 3. Token Bucket Rate Limiter
+
+A rate limiter is a stability and fairness pattern that prevents a client from overwhelming a service. This implementation uses the **Token Bucket** algorithm.
+
+*   **Implementation:** `TokenBucketRateLimiter.java`
+*   **Description:** A simple, thread-safe implementation of the Token Bucket rate-limiting strategy. It's easy to understand and addresses the challenges of the fixed window rate limiting  regarding traffic bursts at window boundaries.
+
+#### How to Run the Test
+
+From the root `java-design-snippets` directory, you can compile and run the test to see the state transitions in action:
+
+```bash
+javac system_design/resiliency/TokenBucketRateLimiter.java system_design/resiliency/TokenBucketRateLimiterTest.java 
+java system_design.resiliency.TokenBucketRateLimiterTest
+```
+
+### 4. Retry with Exponential Backoff 
 A retry mechanism is a resiliency pattern that allows a client to automatically re-attempt an operation that has failed, typically due to transient issues like network glitches or temporary service unavailability. 
 This implementation uses an exponential backoff strategy, where the wait time between retries increases exponentially. This prevents a failed system from being overwhelmed by many retries. 
 *  **Implementation:** RetryWithExponentialBackOff.java 
