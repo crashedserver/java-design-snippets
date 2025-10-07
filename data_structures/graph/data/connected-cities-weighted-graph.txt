@@ -1,0 +1,47 @@
+Srinagar: Jammu=245
+Jammu: Amritsar=210 Ludhiana=280
+Amritsar: Ludhiana=140
+Ludhiana: Chandigarh=100 Delhi=320 Jalandhar=60
+Jalandhar: Chandigarh=150
+Chandigarh: Delhi=250 Dehradun=170 Shimla=115
+Shimla:
+Dehradun: Delhi=250
+Delhi: Jaipur=280 Lucknow=550 Agra=230 Meerut=70
+Meerut:
+Jaipur: Jodhpur=350 Udaipur=400 Ahmedabad=670 Indore=600
+Jodhpur: Ahmedabad=450
+Udaipur: Ahmedabad=260
+Lucknow: Prayagraj=200 Varanasi=320 Patna=600 Kanpur=95
+Prayagraj: Varanasi=120
+Kanpur: Bhopal=520 Varanasi=330
+Agra: Gwalior=120 Lucknow=335
+Gwalior: Bhopal=430 Nagpur=600
+Varanasi: Patna=250 Kolkata=680
+Patna: Kolkata=600 Ranchi=330
+Ahmedabad: Mumbai=530 Surat=265
+Surat: Mumbai=290
+Indore: Bhopal=195 Nagpur=400
+Bhopal: Nagpur=350
+Ranchi: Kolkata=400 Bhubaneswar=450
+Mumbai: Pune=150 Goa=590 Nashik=170
+Nashik: Pune=210
+Pune: Hyderabad=560 Bengaluru=840
+Nagpur: Hyderabad=500 Raipur=280
+Raipur: Bhubaneswar=530 Visakhapatnam=560
+Kolkata: Bhubaneswar=440 Guwahati=1000 Darjeeling=620
+Darjeeling:
+Guwahati: Shillong=100 Imphal=480
+Shillong:
+Imphal:
+Goa: Bengaluru=560
+Hyderabad: Bengaluru=575 Chennai=630 Vijayawada=275
+Bhubaneswar: Visakhapatnam=440
+Visakhapatnam: Chennai=800 Vijayawada=350
+Bengaluru: Chennai=350 Coimbatore=370 Mangalore=350
+Mangalore:
+Chennai: Madurai=460 Tiruchirappalli=320
+Tiruchirappalli: Madurai=140
+Madurai: Coimbatore=215
+Coimbatore: Kochi=190
+Kochi: Thiruvananthapuram=220
+Thiruvananthapuram:
