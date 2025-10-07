@@ -1,0 +1,18 @@
+Delhi: Jaipur=280 Lucknow=550
+Jaipur: Ahmedabad=670
+Lucknow: Varanasi=320 Patna=600
+Ahmedabad: Mumbai=530
+Varanasi: Kolkata=680
+Patna: Kolkata=600
+Mumbai: Pune=150 Nagpur=820
+Pune: Hyderabad=560
+Nagpur: Raipur=280
+Raipur: Bhubaneswar=530
+Hyderabad: Chennai=630
+Bhubaneswar: Visakhapatnam=440
+Chennai: Bengaluru=350
+Visakhapatnam: Vijayawada=350
+Vijayawada: Chennai=440
+Bengaluru: Coimbatore=370
+Coimbatore: Kochi=190
+Kolkata: Bhubaneswar=440

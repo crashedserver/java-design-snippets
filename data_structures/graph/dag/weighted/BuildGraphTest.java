@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package data_structures.graph;
+package data_structures.graph.dag.weighted;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-import data_structures.graph.util.GraphUtil;
+import data_structures.graph.dag.weighted.model.GraphNode;
+import data_structures.graph.dag.weighted.util.GraphUtil;
 
 public final class BuildGraphTest {
     private BuildGraphTest() {
@@ -28,14 +29,9 @@ public final class BuildGraphTest {
     public static void main(String[] args) throws IOException {
 
         //Test the simple graph building and printing
-        Map<String, List<String>> simpleGraph = GraphUtil
-                .buildGraphFromTextFile("data_structures/graph/data/simple_graph.txt");
-        GraphUtil.printGraph(simpleGraph);
-
-        // Test the simple graph building and printing
-        Map<String, List<String>> mavenGraph = GraphUtil
-                .buildGraphFromTextFile("data_structures/graph/data/simple-maven-dependency-graph.txt");
-        GraphUtil.printGraph(mavenGraph);
+        Map<String, List<GraphNode>> simpleGraph = GraphUtil
+                .buildWeightedGraphFromTextFile("data_structures/graph/data/simple-weighted-graph.txt");
+        GraphUtil.printWeightedGraph(simpleGraph);
 
     }
 

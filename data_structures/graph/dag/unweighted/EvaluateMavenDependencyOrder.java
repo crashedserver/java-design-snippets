@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package data_structures.graph;
+package data_structures.graph.dag.unweighted;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 
-import data_structures.graph.util.GraphUtil;
+import data_structures.graph.dag.unweighted.util.GraphUtil;
 
 public final class EvaluateMavenDependencyOrder {
     private EvaluateMavenDependencyOrder() {
